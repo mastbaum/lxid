@@ -87,11 +87,11 @@ def create(h5file, name, files, cut=None, parallel=True):
     h5_ds_pmt = h5_ds.create_group('pmt')
     h5_ds_pmt_t = h5_ds_pmt.create_dataset('t', (1, 10000), 'f', chunks=True, compression='lzf')
     h5_ds_pmt_q = h5_ds_pmt.create_dataset('q', (1, 10000), 'f', chunks=True, compression='lzf')
-    h5_ds_pmt_t_res = h5_ds_pmt.create_dataset('tres', (1, 10000), 'f', chunks=True, compression='lzf')
+    h5_ds_pmt_tres = h5_ds_pmt.create_dataset('tres', (1, 10000), 'f', chunks=True, compression='lzf')
 
     def append_to_h5(event_tuple, ds):
         '''Resize h5 ds to fit new event data, and append it.'''
-        counters, fit, pmt_t, pmt_q = event_tuple
+        counters, fit, pmt_t, pmt_q, pmt_tres = event_tuple
         n, _ = ds['fit'].shape
         n = 0 if n == 1 else n  # gotta start somewhere
         nvalid = len(fit)
@@ -109,6 +109,9 @@ def create(h5file, name, files, cut=None, parallel=True):
 
         h5_ds_pmt_q.resize((n+nvalid, 10000))
         h5_ds_pmt_q[-nvalid:] = pmt_q
+
+        h5_ds_pmt_tres.resize((n+nvalid, 10000))
+        h5_ds_pmt_tres[-nvalid:] = pmt_tres
 
     callback = lambda x: append_to_h5(x, h5_ds)
 
@@ -140,4 +143,6 @@ if __name__ == '__main__':
     ds = create(h5file, name, files, cut)
 
     print ds
+
+    h5file.close()
 

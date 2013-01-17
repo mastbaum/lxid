@@ -13,7 +13,7 @@ class Ventilator(multiprocessing.Process):
     :param tasks: Iterable, each element is handed to a worker
     :param join_delay: Time to wait for workers to connect before starting
     '''
-    def __init__(self, tasks, join_delay=10):
+    def __init__(self, tasks, join_delay=6):
         self.tasks = tasks
         self.join_delay = join_delay
         multiprocessing.Process.__init__(self)

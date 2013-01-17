@@ -14,7 +14,7 @@ def events_from_ds(filename, cut=None, fitter='scintFitter'):
 
         pmt_q: ndarray of shape (nevents, 10000) with per-PMT QHS charge
 
-        pmt_t_res: ndarray of shape (nevents, 10000) with PMT time residuals
+        pmt_tres: ndarray of shape (nevents, 10000) with PMT time residuals
 
     :param filename: Name of ROOT file to extract
     :param cut: *optional* Cut object to apply to data
@@ -33,17 +33,26 @@ def events_from_ds(filename, cut=None, fitter='scintFitter'):
 
     tree = ROOT.TChain('T')
     tree.Add(filename)
+
     nevents = tree.GetEntries()
+    ds = ROOT.RAT.DS.Root()
+    tree.SetBranchAddress('ds', ds)
+
+    runtree = ROOT.TChain('runT')
+    runtree.Add(filename)
+
+    run = ROOT.RAT.DS.Run()
+    runtree.SetBranchAddress('run', run)
+    runtree.GetEvent(0)
+
+    dscint, dav, dwater = ROOT.Double(0), ROOT.Double(0), ROOT.Double(0)
 
     # allocate enough for all events, crop later
     valid = np.zeros(shape=(nevents), dtype=np.bool)
     fit = np.zeros(shape=(nevents, 6), dtype=np.float32)
     pmt_t = np.zeros(shape=(nevents, 10000), dtype=np.float32)
     pmt_q = np.zeros(shape=(nevents, 10000), dtype=np.float32)
-    #pmt_t_res = np.zeros(shape=(nevents, 10000), dtype=np.float32)
-
-    ds = ROOT.RAT.DS.Root()
-    tree.SetBranchAddress('ds', ds)
+    pmt_tres = np.zeros(shape=(nevents, 10000), dtype=np.float32)
 
     for i in range(nevents):
         tree.GetEvent(i)
@@ -74,7 +83,12 @@ def events_from_ds(filename, cut=None, fitter='scintFitter'):
                 pmt = ds.GetEV(0).GetPMTCal(ipmt)
                 pmt_t[i][pmt.id] = pmt.sPMTt
                 pmt_q[i][pmt.id] = pmt.sQHS
-                #pmt_t_res[pmt.id] = pmt.sPMTt
+
+                # time residuals
+                pmt_pos = run.GetPMTProp().GetPos(pmt.id)
+                run.GetStraightLinePath().CalcByPosition(vertex.GetPosition(), pmt_pos, dscint, dav, dwater)
+                tof = run.GetEffectiveVelocityTime().CalcByDistance(dscint, dav, dwater)
+                pmt_tres[i][pmt.id] = pmt.sPMTt - vertex.GetTime() - tof
 
             valid[i] = 1
 
@@ -85,9 +99,9 @@ def events_from_ds(filename, cut=None, fitter='scintFitter'):
     fit = fit[valid > 0]
     pmt_t = pmt_t[valid > 0]
     pmt_q = pmt_q[valid > 0]
-    #pmt_t_res = pmt_t_res[valid > 0]
+    pmt_tres = pmt_tres[valid > 0]
 
-    return counters, fit, pmt_t, pmt_q #, pmt_t_res
+    return counters, fit, pmt_t, pmt_q, pmt_tres
 
 
 def convert_events(files, cut=None, callback=None):
