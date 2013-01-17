@@ -5,6 +5,7 @@ import socket
 import sys
 import zmq
 from lxid.utils import events_from_ds
+from lxid.dataset import Cut
 
 def run_worker(host):
     context = zmq.Context()

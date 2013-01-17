@@ -1,7 +1,8 @@
 '''Utilities for manipulating datasets.'''
 
-from rat import dsreader, ROOT
+import os
 import numpy as np
+import h5py
 
 class Cut(dict):
     '''Cut to be applied to data.
@@ -64,90 +65,79 @@ class Cut(dict):
         return True
 
 
-def create(h5file, name, files, fitter='scintFitter'):
+def create(h5file, name, files, cut=None, parallel=True):
     '''Create a new dataset from the given files, inside h5file.
 
     :param h5file: HDF5 file to add the dataset to
     :param name: Name of the new dataset
     :param files: List of ROOT file names
-    :param fitter: Fit result to extract
+    :param cut: Cut to apply to the whole dataset
+    :param parallel: If True, use a cluster to extract ROOT events
     :returns: The newly-created HDF5 group
     '''
-    if name in list(f):
+    if name in list(h5file):
         raise Exception('Group %s already exists!' % name)
 
-    h5_ds = f.create_group(name)
+    h5_ds = h5file.create_group(name)
+    h5_ds.attrs['events_total'] = 0
+    h5_ds.attrs['events_triggered'] = 0
+    h5_ds.attrs['events_reconstructed'] = 0
+    h5_ds.attrs['events_pass'] = 0
     h5_ds_fit = h5_ds.create_dataset('fit', (1, 6), 'f', chunks=True)  # x y z r t e
     h5_ds_pmt = h5_ds.create_group('pmt')
     h5_ds_pmt_t = h5_ds_pmt.create_dataset('t', (1, 10000), 'f', chunks=True, compression='lzf')
     h5_ds_pmt_q = h5_ds_pmt.create_dataset('q', (1, 10000), 'f', chunks=True, compression='lzf')
     h5_ds_pmt_t_res = h5_ds_pmt.create_dataset('tres', (1, 10000), 'f', chunks=True, compression='lzf')
 
-    i
+    def append_to_h5(event_tuple, ds):
+        '''Resize h5 ds to fit new event data, and append it.'''
+        counters, fit, pmt_t, pmt_q = event_tuple
+        n, _ = ds['fit'].shape
+        n = 0 if n == 1 else n  # gotta start somewhere
+        nvalid = len(fit)
 
-    runt = ROOT.TChain('runT')
+        ds.attrs['events_total'] += counters['events_total']
+        ds.attrs['events_triggered'] += counters['events_triggered']
+        ds.attrs['events_reconstructed'] += counters['events_reconstructed']
+        ds.attrs['events_pass'] += counters['events_pass']
 
-    ds = ROOT.RAT.DS.Root()
-    t.SetBranchAddress('ds', ds)
+        h5_ds_fit.resize((n+nvalid, 6))
+        h5_ds_fit[-nvalid:] = fit
 
-    run = ROOT.RAT.DS.Run()
-    runt.SetBranchAddress('run', run)
-    runt.GetEvent(0)
+        h5_ds_pmt_t.resize((n+nvalid, 10000))
+        h5_ds_pmt_t[-nvalid:] = pmt_t
 
-    nevents = t.GetEntries()
-    print '%i entries' % nevents
+        h5_ds_pmt_q.resize((n+nvalid, 10000))
+        h5_ds_pmt_q[-nvalid:] = pmt_q
 
-    # allocate enough for all events, crop later
-    valid = np.zeros(shape=(nevents), dtype=np.bool)
-    fit = np.zeros(shape=(nevents, 6), dtype=np.float32)
-    pmt_t = np.zeros(shape=(nevents, 10000), dtype=np.float32)
-    pmt_q = np.zeros(shape=(nevents, 10000), dtype=np.float32)
-    pmt_t_res = np.zeros(shape=(nevents, 10000), dtype=np.float32)
+    callback = lambda x: append_to_h5(x, h5_ds)
 
-    for i in range(nevents):
-        t.GetEntry(i)
-
-        if ds.GetEVCount() < 1:
-            continue
-
-        try:
-            vertex = ds.GetEV(0).GetFitResult(fitter).GetVertex(0)
-            pos = vertex.GetPosition()
-            fit[i] = np.array([pos.X(), pos.Y(), pos.Z(), pos.Mag(), vertex.GetTime(), vertex.GetEnergy()])
-            for ipmt in range(ds.GetEV(0).GetPMTCalCount()):
-                pmt = ds.GetEV(0).GetPMTCal(ipmt)
-                pmt_t[i][pmt.id] = pmt.sPMTt
-                pmt_q[i][pmt.id] = pmt.sQHS
-                #pmt_t_res[pmt.id] = pmt.sPMTt
-            valid[i] = 1
-
-        except Exception: #FitUnavailable:
-            raise
-            print 'warning: no fit %s available' % fitter
-            continue
-
-    n, _ = h5_ds_fit.shape
-    n = 0 if n == 1 else n  # gotta start somewhere
-    nvalid = len(valid[valid > 0])
-
-    h5_ds_fit.resize((n+nvalid, 6))
-    h5_ds_fit[-nvalid:] = fit[valid > 0]
-
-    h5_ds_pmt_t.resize((n+nvalid, 10000))
-    h5_ds_pmt_t[-nvalid:] = pmt_t[valid > 0]
-
-    h5_ds_pmt_q.resize((n+nvalid, 10000))
-    h5_ds_pmt_q[-nvalid:] = pmt_q[valid > 0]
+    if parallel:
+        from utils import convert_events_parallel
+        convert_events_parallel(files, cut, callback=callback)
+    else:
+        from utils import convert_events
+        convert_events(files, cut, callback=callback)
 
     return h5_ds
 
+
 if __name__ == '__main__':
-    import h5py
+    #if cache_dir is None:
+    cache_dir = os.path.join(os.path.expanduser('~/.lxid'))
 
-    f = h5py.File('lxid.hdf5', 'a')
-    filenames = ['/home/mastbaum/snoplus/tl208/data/pdf/tl208/run0/av_tl208-0.root']
+    if os.path.exists(cache_dir):
+        if not os.path.isdir(cache_dir):
+            raise Exception('cache location %s exists and is not a directory' % cache_dir)
+    else:
+        os.mkdir(cache_dir)
 
-    ds = create_dataset(f, 'tl208', filenames)
+    h5file = h5py.File(os.path.join(cache_dir, 'lxid.hdf5'), 'a')
+    cut = Cut(e=(2.555, 2.718))
+
+    name = 'tl208'
+    files = ['/home/mastbaum/snoplus/tl208/data/pdf/tl208/run0/av_tl208-0.root']
+    ds = create(h5file, name, files, cut)
 
     print ds
 

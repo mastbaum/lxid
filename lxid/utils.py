@@ -1,7 +1,5 @@
 '''Various utilities'''
 
-from lxid.dataset import Cut
-
 def events_from_ds(filename, cut=None, fitter='scintFitter'):
     '''Convert a ROOT file to a numpy array format.
 
@@ -62,7 +60,7 @@ def events_from_ds(filename, cut=None, fitter='scintFitter'):
 
             vertex = ds.GetEV(0).GetFitResult(fitter).GetVertex(0)
             pos = vertex.GetPosition()
-            this_fit = np.array([pos.X(), pos.Y(), pos.Z(), pos.Mag(), vertex.GetTime(), vertex.GetEnergy()])
+            this_fit = np.array([pos.X(), pos.Y(), pos.Z(), pos.Mag(), vertex.GetTime(), vertex.GetEnergy()], dtype=np.float32)
 
             counters['events_reconstructed'] += 1
 
@@ -81,12 +79,10 @@ def events_from_ds(filename, cut=None, fitter='scintFitter'):
             valid[i] = 1
 
         except Exception as e:
-            print e
-            raise
-            print 'warning: no fit %s available' % fitter
+            print 'warning: no fit %s available (%s)' % (fitter, e)
             continue
 
-    fit = fit[valid > 1]
+    fit = fit[valid > 0]
     pmt_t = pmt_t[valid > 0]
     pmt_q = pmt_q[valid > 0]
     #pmt_t_res = pmt_t_res[valid > 0]
@@ -105,6 +101,8 @@ def convert_events(files, cut=None, callback=None):
     :param callback: Called with each event
     :returns: Converted events if callback is not provided
     '''
+    from lxid.dataset import Cut
+
     if cut is None:
         cut = Cut()
 
@@ -133,7 +131,10 @@ def convert_events_parallel(files, cut=None, callback=None, context=None):
     :returns: Converted events if callback is not provided
     '''
     from lxid.parallel import Ventilator, Sink
+    from lxid.dataset import Cut
     import zmq
+
+    _ = raw_input('Press enter to continue when workers are running...')
 
     if context is None:
         context = zmq.Context()

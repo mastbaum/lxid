@@ -26,7 +26,7 @@ class Ventilator(multiprocessing.Process):
         sink = context.socket(zmq.PUSH)
         sink.connect("tcp://localhost:5558")
 
-        print 'Ventilator: Waiting %fs for workers to join...' % self.join_delay,
+        print 'Ventilator: Waiting %1.0fs for workers to join...' % self.join_delay,
         sys.stdout.flush()
         time.sleep(self.join_delay)
         print 'done'
